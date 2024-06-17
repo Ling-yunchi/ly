@@ -23,8 +23,8 @@ export interface ClassAttributes<T = any> {
   ref?: Ref<T>;
 }
 
-export type Permitives = string | number | bigint | boolean | null | undefined;
-export type ComponentChild = Permitives | Computed<Permitives> | VNode;
+export type Primitive = string | number | bigint | boolean | null | undefined;
+export type ComponentChild = Primitive | Computed<Primitive> | VNode;
 export type ComponentChildren = ComponentChild | ComponentChild[];
 
 export type Props = Record<string, any>;

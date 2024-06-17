@@ -1,6 +1,6 @@
 import {
   type ComponentChildren,
-  type Permitives,
+  type Primitive,
   provideSlots,
   type ComponentChild,
   type VNode,
@@ -140,7 +140,7 @@ function mountVNode(vnode: VNode, mount: Mount): VDOM {
   }
 }
 
-function toString(permitive: Permitives) {
+function toString(permitive: Primitive) {
   return permitive == null || permitive === false ? "" : String(permitive);
 }
 
@@ -151,7 +151,7 @@ function toString(permitive: Permitives) {
  * @returns VDOM
  */
 function mountPrimitive(
-  vnode: Permitives | Computed<Permitives>,
+  vnode: Primitive | Computed<Primitive>,
   mount: Mount
 ): VDOM {
   const vdom = new VDOM();
