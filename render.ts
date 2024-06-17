@@ -15,27 +15,32 @@ import {
   type Computed,
 } from "./signal.ts";
 
-type VDOM = {
-  children: VDOM[];
+class VDOM {
+  children: VDOM[]; // childrens
   states: (ComputedState | EffectState)[];
-  doms: ChildNode[];
-  contain: boolean;
-};
+  doms: ChildNode[]; // real doms
 
-function createVDOM(contain: boolean = false): VDOM {
-  return { children: [], states: [], doms: [], contain };
-}
+  constructor() {
+    this.children = [];
+    this.states = [];
+    this.doms = [];
+  }
 
-function removeVDOM(vdom: VDOM, remove: boolean = true) {
-  for (const child of vdom.children) {
-    removeVDOM(child, remove && !vdom.contain);
-  }
-  for (const state of vdom.states) {
-    state._remove();
-  }
-  if (remove) {
-    for (const dom of vdom.doms) {
-      dom.remove();
+  /**
+   * Remove all childrens and states
+   * @param removeDom Whether remove real doms, default is true
+   */
+  remove(removeDom: boolean = true) {
+    for (const child of this.children) {
+      child.remove(removeDom);
+    }
+    for (const state of this.states) {
+      state._remove();
+    }
+    if (removeDom) {
+      for (const dom of this.doms) {
+        dom.remove();
+      }
     }
   }
 }
@@ -45,7 +50,7 @@ type Mount = (node: Node) => void;
 function mountChildren(vnodes: ComponentChildren, mount: Mount): VDOM {
   vnodes = toArray(vnodes);
 
-  const vdom = createVDOM();
+  const vdom = new VDOM();
 
   for (let i = 0; i < vnodes.length; ++i) {
     const child = mountChild(vnodes[i], mount);
@@ -73,7 +78,7 @@ function mountVNode(vnode: VNode, mount: Mount): VDOM {
     return mountChildren(children, mount);
   } else if (typeof vnode.type === "string") {
     const elem = document.createElement(vnode.type);
-    const vdom = createVDOM(true);
+    const vdom = new VDOM();
     vdom.doms.push(elem);
 
     // TODO: set elem props
@@ -107,7 +112,7 @@ function mountVNode(vnode: VNode, mount: Mount): VDOM {
     );
 
     if (typeof vnodes === "function") {
-      const vdom = createVDOM();
+      const vdom = new VDOM();
 
       const anchor = new Comment("/");
       mount(anchor);
@@ -117,14 +122,14 @@ function mountVNode(vnode: VNode, mount: Mount): VDOM {
           const children = mountChildren(vnodes(), (node) =>
             anchor.before(node)
           );
-          return () => removeVDOM(children);
+          return () => children.remove();
         })
       );
 
       return vdom;
     }
 
-    const vdom = createVDOM();
+    const vdom = new VDOM();
     vdom.children.push(mountChildren(vnodes, mount));
     vdom.states.push(...computes);
     vdom.states.push(...effects);
@@ -139,11 +144,17 @@ function toString(permitive: Permitives) {
   return permitive == null || permitive === false ? "" : String(permitive);
 }
 
-function mountPermitives(
+/**
+ * Mount primitive or computed primitive
+ * @param vnode primitive or computed primitive
+ * @param mount mount function
+ * @returns VDOM
+ */
+function mountPrimitive(
   vnode: Permitives | Computed<Permitives>,
   mount: Mount
 ): VDOM {
-  const vdom = createVDOM();
+  const vdom = new VDOM();
   const text = new Text();
   vdom.doms.push(text);
 
@@ -165,7 +176,7 @@ function mountPermitives(
 function mountChild(vnode: ComponentChild, mount: Mount): VDOM {
   return isVNode(vnode)
     ? mountVNode(vnode, mount)
-    : mountPermitives(vnode, mount);
+    : mountPrimitive(vnode, mount);
 }
 
 /**
