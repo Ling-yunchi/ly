@@ -55,7 +55,6 @@ function mountChildren(vnodes: ComponentChildren, mount: Mount): VDOM {
   for (let i = 0; i < vnodes.length; ++i) {
     const child = mountChild(vnodes[i], mount);
     vdom.children.push(child);
-    vdom.doms.push(...child.doms);
   }
 
   return vdom;
@@ -110,11 +109,11 @@ function mountVNode(vnode: VNode, mount: Mount): VDOM {
     const [vnodes, _refs, computes, effects] = collect(() =>
       provideSlots(slots, () => type(props))
     );
+    const vdom = new VDOM();
 
     if (typeof vnodes === "function") {
-      const vdom = new VDOM();
-
       const anchor = new Comment("/");
+      vdom.doms.push(anchor);
       mount(anchor);
 
       vdom.states.push(
@@ -122,17 +121,21 @@ function mountVNode(vnode: VNode, mount: Mount): VDOM {
           const children = mountChildren(vnodes(), (node) =>
             anchor.before(node)
           );
-          return () => children.remove();
+          vdom.children.push(children);
+
+          return () => {
+            vdom.children.forEach((child) => {
+              child.remove();
+            });
+            vdom.children = [];
+          };
         })
       );
-
-      return vdom;
+    } else {
+      vdom.children.push(mountChildren(vnodes, mount));
+      vdom.states.push(...computes);
+      vdom.states.push(...effects);
     }
-
-    const vdom = new VDOM();
-    vdom.children.push(mountChildren(vnodes, mount));
-    vdom.states.push(...computes);
-    vdom.states.push(...effects);
 
     return vdom;
   } else {

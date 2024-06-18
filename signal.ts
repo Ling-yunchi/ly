@@ -1,18 +1,29 @@
 // deno-lint-ignore-file no-explicit-any
 
-export type Ref<T = any> = { value: T };
-export type Computed<T = any> = { readonly value: T };
+export interface Ref<T = any> {
+  value: T;
+}
+export interface Computed<T = any> {
+  readonly value: T;
+}
 
 export type State = RefState | ComputedState | EffectState;
-type Capture = {
+
+class Capture {
   _getters: Set<RefState | ComputedState>;
   _setters: Set<RefState>;
-};
+
+  constructor() {
+    this._getters = new Set();
+    this._setters = new Set();
+  }
+}
 
 let currentCapture: Capture | null = null;
 
 let dirtyStates = new Set<RefState>();
 let currentUpdate = false;
+
 function enqueueUpdate(node: RefState) {
   dirtyStates.add(node);
   if (!currentUpdate) {
@@ -21,40 +32,21 @@ function enqueueUpdate(node: RefState) {
   }
 }
 
-function mark(node: RefState | ComputedState) {
-  for (const listener of node._listeners) {
-    if (!listener._dirty++ && listener instanceof ComputedState) {
-      mark(listener);
-    }
-  }
-}
-
-function unmark(node: RefState | ComputedState) {
-  for (const listener of node._listeners) {
-    if (!--listener._dirty && listener instanceof ComputedState) {
-      unmark(listener);
-    }
-  }
-}
-
 function updateStates() {
   currentUpdate = false;
+
+  console.log(dirtyStates);
 
   while (dirtyStates.size > 0) {
     const dirty = [...dirtyStates];
     dirtyStates = new Set();
     const queue: (ComputedState | EffectState)[] = [];
 
-    for (const node of dirty) mark(node);
-    for (const node of dirty) {
-      if (node._update()) {
-        for (const dest of node._listeners) {
-          if (!--dest._dirty) {
-            queue.push(dest);
-          }
+    for (const refState of dirty) {
+      if (refState._update()) {
+        for (const dest of refState._listeners) {
+          queue.push(dest);
         }
-      } else {
-        unmark(node);
       }
     }
 
@@ -62,13 +54,11 @@ function updateStates() {
       const node = queue.pop()!;
 
       if (node._update()) {
-        for (const dest of (node as ComputedState)._listeners) {
-          if (!--dest._dirty) {
+        if (node instanceof ComputedState) {
+          for (const dest of node._listeners) {
             queue.push(dest);
           }
         }
-      } else if (node instanceof ComputedState) {
-        unmark(node);
       }
     }
   }
@@ -83,14 +73,17 @@ function assertRecursive(name: string) {
   }
 }
 
-export class RefState<T = any> {
+let refId: number = 0;
+export class RefState<T = any> implements Ref<T> {
   private _old: T;
   private _state: T;
   private _pending: T;
+  _id: number;
   _listeners: Set<ComputedState | EffectState> = new Set();
 
   constructor(init: T) {
     assertRecursive("ref");
+    this._id = refId++;
 
     this._old = init;
     this._state = init;
@@ -120,20 +113,21 @@ export class RefState<T = any> {
   }
 }
 
-export class ComputedState<T = any> {
+let computedId: number = 0;
+export class ComputedState<T = any> implements Computed<T> {
   private _fn: () => T;
   private _old: T;
   private _state: T;
   private _capture: Capture;
-  _count: number = 0;
-  _dirty: number = 0;
+  _id: number;
   _listeners: Set<ComputedState | EffectState> = new Set();
 
   constructor(fn: () => T) {
     assertRecursive("computed");
+    this._id = computedId++;
 
     this._fn = fn;
-    this._capture = createCapture();
+    this._capture = new Capture();
 
     recursive = "computed";
     const state = runCapture(fn, this._capture);
@@ -158,7 +152,7 @@ export class ComputedState<T = any> {
     }
 
     // capture new deps
-    this._capture = createCapture();
+    this._capture = new Capture();
     const state = runCapture(this._fn, this._capture);
 
     // link to current getters
@@ -185,18 +179,20 @@ export class ComputedState<T = any> {
   }
 }
 
+let effectId: number = 0;
 export class EffectState {
   private _fn: () => void | (() => void);
   private _capture: Capture;
   private _clear: void | (() => void);
-  _count: number = 0;
-  _dirty: number = 0;
+  _id: number;
+  _deleted: boolean;
 
   constructor(fn: () => void | (() => void)) {
     assertRecursive("effect");
+    this._id = effectId++;
 
     this._fn = fn;
-    this._capture = createCapture();
+    this._capture = new Capture();
 
     recursive = "effect";
     this._clear = runCapture(fn, this._capture);
@@ -205,9 +201,13 @@ export class EffectState {
     for (const node of this._capture._getters) {
       node._listeners.add(this);
     }
+    this._deleted = false;
   }
 
   _update(): void {
+    if (this._deleted) {
+      return;
+    }
     if (typeof this._clear === "function") {
       this._clear();
     }
@@ -215,7 +215,7 @@ export class EffectState {
       node._listeners.delete(this);
     }
 
-    this._capture = createCapture();
+    this._capture = new Capture();
     this._clear = runCapture(this._fn, this._capture);
 
     for (const node of this._capture._getters) {
@@ -230,11 +230,8 @@ export class EffectState {
     for (const node of this._capture._getters) {
       node._listeners.delete(this);
     }
+    this._deleted = true;
   }
-}
-
-function createCapture(): Capture {
-  return { _getters: new Set(), _setters: new Set() };
 }
 
 function runCapture<T>(fn: () => T, capture: Capture) {
